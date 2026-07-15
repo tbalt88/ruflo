@@ -24,6 +24,9 @@ export const CONSENT_DOMAINS: ConsentDomain[] = [
   'power-saver',
   'training-data-sharing',
   'advisor-tips',
+  'rev-share-payout',
+  'spinner-verbs',
+  'company-announcements',
 ];
 
 export function readConsents(): ConsentFile {

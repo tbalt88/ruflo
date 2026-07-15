@@ -92,6 +92,10 @@ const commandLoaders: Record<string, CommandLoader> = {
   proxy: () => import('./proxy.js'),
   // Fable co-pilot advisor tip in the statusline insight ticker (ADR-316)
   advisor: () => import('./advisor.js'),
+  // Ruflo verbs in Claude Code's spinnerVerbs rotation (ADR-318)
+  spinner: () => import('./spinner.js'),
+  // Ruflo entries in Claude Code's companyAnnouncements startup rotation (ADR-319)
+  announcements: () => import('./announcements.js'),
 };
 
 // Cache for loaded commands

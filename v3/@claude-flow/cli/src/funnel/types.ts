@@ -85,7 +85,29 @@ export type ConsentDomain =
   // the concern training-data-sharing gates), but it's still a real, opt-in
   // network call with a real cost, and gets its own never-bundled decision
   // like every other domain in this family.
-  | 'advisor-tips';
+  | 'advisor-tips'
+  // ADR-317: separate again — enrollment in the developer revenue-share
+  // program, sharing 50% of Cognitum sponsor revenue attributed to this
+  // user's install. Never bundled with the funnel-on/off decision itself
+  // (a user can see rotating messages without earning; that's the default).
+  // Consent alone is a precondition — actual enrollment requires KYC +
+  // Stripe Connect via the browser flow started by `ruflo funnel enroll`,
+  // which can fail after consent for reasons outside the user's control.
+  | 'rev-share-payout'
+  // ADR-318: separate again — writing to ~/.claude/settings.json's
+  // spinnerVerbs.verbs[] to inject a curated ruflo verb pool into Claude
+  // Code's "✽ Channeling…" rotation. Distinct from the promo row surface
+  // (which we already own via the statusline hook) because this touches
+  // a Claude Code config file directly. Append-only, backup-first,
+  // ZWJ-marker-tagged for clean removal.
+  | 'spinner-verbs'
+  // ADR-319: separate again — writing to ~/.claude/settings.json's
+  // companyAnnouncements[] to add ruflo's curated startup announcements.
+  // Higher-attention, lower-frequency counterpart to spinner-verbs
+  // (once per Claude Code launch vs. every processing pause). Independent
+  // consent because a user might reasonably want spinner-verbs without
+  // startup announcements or vice versa.
+  | 'company-announcements';
 
 export interface ConsentReceipt {
   granted: boolean;
@@ -99,6 +121,22 @@ export type ConsentFile = Partial<Record<ConsentDomain, ConsentReceipt>>;
 
 /** Bump when the meaning of a consent domain changes materially (ADR-302). */
 export const CONSENT_POLICY_VERSION = 1;
+
+// ─── ADR-317: developer revenue-share payout enrollment ────────────────────
+
+export type PayoutEnrollmentPolicyVersion = 1;
+
+/**
+ * Local mirror of enrollment state issued by the funnel.ruv.io backend.
+ * The `enrollment_token` is opaque — the client never introspects it.
+ */
+export interface PayoutEnrollment {
+  enrollment_token: string;
+  enrolled_at: string;               // ISO
+  payout_account_last4: string;      // display-only, never used for auth
+  kyc_status: 'verified' | 'pending' | 'failed';
+  policy_version: PayoutEnrollmentPolicyVersion;
+}
 
 // ─── ADR-305: control precedence ────────────────────────────────────────────
 
