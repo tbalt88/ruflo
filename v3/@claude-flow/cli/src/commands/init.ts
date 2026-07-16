@@ -155,6 +155,67 @@ async function maybeAutoDetectCodex(
   }
 }
 
+// Cross-agent skill registration via skills.sh. Runs `npx --yes skills add
+// ruvnet/ruflo --skill ruflo --yes` so the *single* canonical ruflo skill
+// (SKILL.md at the ruvnet/ruflo repo root — describes the platform + entry
+// points) reaches whatever agent the project uses (Claude Code, Cursor,
+// Copilot, Gemini, Cline, …). Users who want ALL 267 plugin-specific skills
+// can run `npx skills add ruvnet/ruflo --all` themselves. Best-effort — never
+// fails init. Opt-out: --no-skills-sh flag OR RUFLO_NO_SKILLS_SH=1. Skipped
+// under --skip-claude and scripted `--format json` output.
+//
+// windowsHide silences the console flash the npx child would otherwise produce
+// (anthropics/claude-code#14828 spawn hazard applies to hook-fired spawns,
+// but our own subprocess spawns should always set this).
+async function maybeInstallSkillsSh(ctx: CommandContext): Promise<void> {
+  try {
+    if (ctx.flags['no-skills-sh'] === true) return;
+    if (ctx.flags.format === 'json') return;
+    if (/^(1|true|on|yes)$/i.test(String(process.env.RUFLO_NO_SKILLS_SH || ''))) return;
+
+    // Idempotency gate: if this project has already registered ruflo with
+    // skills.sh, don't re-clone the repo + re-fire a fresh install telemetry
+    // event on every `ruflo init --force` / `init upgrade` / etc. Each install
+    // pings skills.sh's leaderboard AND clones the whole ruvnet/ruflo repo
+    // (~50MB) — re-running per-init would silently inflate our own metrics
+    // (GitHub unique-cloners, skills.sh rank) and waste user bandwidth. This
+    // check makes the registration once-per-project, matching the intent.
+    const nodePath = await import('path');
+    const nodeFs = await import('fs');
+    const marker = nodePath.join(ctx.cwd, '.agents', 'skills', 'ruflo');
+    if (nodeFs.existsSync(marker)) {
+      output.writeln();
+      output.writeln(output.dim('  skills.sh registration already present at .agents/skills/ruflo — skipping'));
+      return;
+    }
+
+    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    if (!commandExists('npx')) return;
+
+    output.writeln();
+    output.printInfo('Registering the core `ruflo` skill with skills.sh (cross-agent catalog)…');
+
+    const { spawnSync } = await import('child_process');
+    const result = spawnSync(
+      npxCmd,
+      ['--yes', 'skills', 'add', 'ruvnet/ruflo', '--skill', 'ruflo', '--yes'],
+      { cwd: ctx.cwd, stdio: 'pipe', timeout: 60_000, windowsHide: true, encoding: 'utf-8' },
+    );
+
+    if (result.status === 0) {
+      output.writeln(output.success('  ✓ ruflo registered via skills.sh — the platform skill is available to any agent in this project'));
+      output.writeln(output.dim('    Want all 267 plugin skills? npx skills add ruvnet/ruflo --all'));
+      output.writeln(output.dim('    Opt out next time: --no-skills-sh or RUFLO_NO_SKILLS_SH=1'));
+    } else {
+      // Common non-fatal reasons: offline, npx cache miss, skills CLI version
+      // mismatch, unknown package. Log a soft note; users can retry manually.
+      output.writeln(output.dim('  skills.sh registration skipped (network or npx cache) — retry with: npx skills add ruvnet/ruflo --skill ruflo --yes'));
+    }
+  } catch {
+    // Skills.sh registration is a bonus, never a requirement — swallow everything.
+  }
+}
+
 // Codex initialization action
 async function initCodexAction(
   ctx: CommandContext,
@@ -487,6 +548,7 @@ const initAction = async (ctx: CommandContext): Promise<CommandResult> => {
     // #2666-adjacent — auto-detect + configure OpenAI Codex CLI if present
     if (!skipClaude) {
       await maybeAutoDetectCodex(ctx, { force, minimal, full });
+      await maybeInstallSkillsSh(ctx);
     }
 
     // Handle --start-all or --start-daemon
@@ -1331,6 +1393,12 @@ export const initCommand: Command = {
       default: false,
     },
     {
+      name: 'no-skills-sh',
+      description: 'Skip the post-init `npx skills add ruvnet/ruflo` registration (also honored via RUFLO_NO_SKILLS_SH=1)',
+      type: 'boolean',
+      default: false,
+    },
+    {
       name: 'all-agents',
       description: 'Install all agent categories (ADR-128: default is ~24 substrate agents; this restores the full set of ~89)',
       type: 'boolean',
@@ -1358,6 +1426,7 @@ export const initCommand: Command = {
     { command: 'claude-flow init --codex --full', description: 'Codex init with all 137+ skills' },
     { command: 'claude-flow init --dual', description: 'Initialize for both Claude Code and Codex' },
     { command: 'claude-flow init --no-codex-detect', description: 'Skip auto-configuring OpenAI Codex even if it is installed' },
+    { command: 'claude-flow init --no-skills-sh', description: 'Skip the post-init skills.sh registration' },
     { command: 'claude-flow init --all-agents', description: 'Install all agent categories (~89 agents; ADR-128 opt-in)' },
   ],
   action: initAction,
